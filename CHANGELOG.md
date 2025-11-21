@@ -5,6 +5,24 @@ All notable changes to VibeProxy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2025-11-21
+
+### Fixed
+- **Window Crash Bug** - Fixed critical crash when closing settings window on macOS 26.0.1 (#19)
+  - Added NSWindowDelegate protocol and proper window lifecycle management
+  - Made settingsWindow a weak reference to prevent memory issues
+  - Added windowDidClose delegate method for cleanup
+
+### Added
+- **Qwen Models Documentation** - Added Qwen3 Coder Plus and Qwen3 Coder Flash to Factory setup guide (#21)
+- **Gemini Models Documentation** - Comprehensive Gemini setup instructions for Factory CLI integration
+  - Added working Gemini 2.5 models (Pro, Flash, Flash Lite)
+  - Documented Gemini 3 Pro Preview status (requires Vertex AI API, support coming soon)
+
+### Improved
+- **Issue Triage** - Resolved 12 open issues with detailed responses and documentation updates
+- **Documentation** - Clarified model availability, setup instructions, and troubleshooting
+
 ## [1.0.7] - 2025-11-21
 
 ### Updated
