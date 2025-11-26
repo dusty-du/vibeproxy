@@ -21,20 +21,9 @@ Built on [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), it handles
   <a href="https://www.loom.com/share/5cf54acfc55049afba725ab443dd3777"><img src="vibeproxy-factory-video.webp" width="600" height="380" alt="VibeProxy Screenshot" border="0"></a>
 </p>
 
-> [!NOTE]
-> 📣 **NEW: Gemini 3 Pro Support via Antigravity! 🚀** VibeProxy v1.0.9+ now supports Google's latest Gemini 3 Pro models through Antigravity authentication. Connect with your Google account to access `gemini-3-pro-high`, `gemini-3-pro-low`, and `gemini-3-pro-image`. See the [Factory Setup Guide](FACTORY_SETUP.md#step-2-connect-your-accounts) for configuration details.
->
-> 📣 **NEW: Auto-Updates! 🔄** VibeProxy now automatically checks for and downloads the latest CLIProxyAPI binary updates in the background. You'll always have support for the newest models without lifting a finger.
->
-> 📣 **NEW: GPT-5.1 & GPT-5.1 Codex Support! ⚡️** Drop the brand-new `gpt-5.1*` and `gpt-5.1-codex*` models into your Factory CLI config and VibeProxy will route them through your ChatGPT subscription automatically. Follow the updated [Factory setup](FACTORY_SETUP.md#step-3-configure-factory-cli) snippet.
->
-> 📣 **NEW: Extended Thinking Support! 🧠** VibeProxy now supports Claude's extended thinking feature with dynamic budgets (4K, 10K, 32K tokens). Use model names like `claude-sonnet-4-5-20250929-thinking-10000` to enable extended thinking. See the [Factory Setup Guide](FACTORY_SETUP.md#step-3-configure-factory-cli) for details.
-> 
-> 📣 **NEW: Gemini and Qwen Support! 🎉** VibeProxy now supports Google's Gemini AI and Qwen AI with full OAuth authentication. Connect your accounts and use Gemini and Qwen with your favorite AI coding tools!
-
----
-
 > [!TIP]
+> 📣 **Latest models supported:**<br>Gemini 3 Pro Support (via Antigravity), GPT-5.1 / GPT-5.1 Codex, and Claude Sonnet 4.5 / Opus 4.5 with extended thinking! 🚀 
+> 
 > **Setup Guides:**
 > - [Factory CLI Setup →](FACTORY_SETUP.md) - Use Factory Droids with your AI subscriptions
 > - [Amp CLI Setup →](AMPCODE_SETUP.md) - Use Amp CLI with fallback to your subscriptions
