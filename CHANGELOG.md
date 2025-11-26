@@ -5,6 +5,28 @@ All notable changes to VibeProxy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-11-26
+
+### Added
+- **GPT-5.1 Codex Max Support** - Added configuration and documentation for OpenAI's latest Codex Max model (#54)
+  - `gpt-5.1-codex-max` - Optimized for long-horizon agentic coding tasks
+  - Complete setup instructions in FACTORY_SETUP.md
+
+### Updated
+- **CLIProxyAPI 6.5.23** - Latest upstream release (#55)
+  - Includes support for Gemini 3 Pro Image Preview model
+  - Various upstream improvements and stability enhancements
+
+### Fixed
+- **Gemini 3 Pro Model Names** - Corrected model names to match CLIProxyAPI supported models (#53)
+  - Changed `gemini-3-pro-high` / `gemini-3-pro-low` to `gemini-3-pro-preview`
+  - Changed `gemini-3-pro-image` to `gemini-3-pro-image-preview`
+  - Updated FACTORY_SETUP.md and CHANGELOG.md with correct model names
+- **Auto-Update Workflow** - Fixed YAML syntax error in PR notification step
+  - Fixed multi-line string indentation in `update-cliproxyapi.yml`
+  - Workflow now runs successfully instead of failing immediately
+  - Added PR comments with @mentions for better notification delivery
+
 ## [1.3.0] - 2025-11-25
 
 ### Added
@@ -296,6 +318,7 @@ All future changes will be documented here before release.
 
 ---
 
+[1.4.0]: https://github.com/automazeio/vibeproxy/releases/tag/v1.4.0
 [1.3.0]: https://github.com/automazeio/vibeproxy/releases/tag/v1.3.0
 [1.2.0]: https://github.com/automazeio/vibeproxy/releases/tag/v1.2.0
 [1.1.0]: https://github.com/automazeio/vibeproxy/releases/tag/v1.1.0
