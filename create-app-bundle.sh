@@ -147,10 +147,24 @@ if [ -n "$CODESIGN_IDENTITY" ]; then
     # Sign Sparkle.framework (required for notarization)
     if [ -d "$APP_DIR/Contents/Frameworks/Sparkle.framework" ]; then
         echo -e "${BLUE}Signing Sparkle.framework...${NC}"
+        SPARKLE_FW="$APP_DIR/Contents/Frameworks/Sparkle.framework/Versions/B"
+        
+        # Sign XPC services first (deepest nested)
+        for xpc in "$SPARKLE_FW/XPCServices"/*.xpc; do
+            if [ -d "$xpc" ]; then
+                codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp "$xpc"
+            fi
+        done
+        
+        # Sign Autoupdate
         codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp \
-            "$APP_DIR/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+            "$SPARKLE_FW/Autoupdate"
+        
+        # Sign Updater.app
         codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp \
-            "$APP_DIR/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+            "$SPARKLE_FW/Updater.app"
+        
+        # Sign the framework itself
         codesign --force --sign "$CODESIGN_IDENTITY" --options runtime --timestamp \
             "$APP_DIR/Contents/Frameworks/Sparkle.framework"
         echo -e "${GREEN}✅ Sparkle.framework signed${NC}"
