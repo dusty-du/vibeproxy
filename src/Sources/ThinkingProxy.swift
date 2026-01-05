@@ -347,10 +347,10 @@ class ThinkingProxy {
                let modifiedString = String(data: modifiedData, encoding: .utf8) {
                 return (modifiedString, true)
             }
-        } else if model.contains("thinking") {
-            // Model contains "thinking" but no explicit budget suffix (e.g. gemini-claude-opus-4-5-thinking)
-            // We should still enable the beta header, but we won't modify the body (assume backend defaults or user handled it)
-            NSLog("[ThinkingProxy] Detected thinking model '\(model)' without budget suffix - enabling beta header")
+        } else if model.hasSuffix("-thinking") || model.contains("-thinking(") {
+            // Model ends with -thinking or uses -thinking(budget) syntax (e.g. gemini-claude-opus-4-5-thinking, gemini-claude-opus-4-5-thinking(32768))
+            // Enable beta header but don't modify body - let backend handle thinking budget
+            NSLog("[ThinkingProxy] Detected thinking model '\(model)' - enabling beta header, passing through to backend")
             return (jsonString, true)
         }
         
