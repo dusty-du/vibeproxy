@@ -6,6 +6,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [1.8.1] - 2025-12-08
 
+## [1.8.40] - 2026-01-05
+
+### Added
+- **Claude models via Antigravity** - Support for `gemini-claude-*` model prefixes (#145)
+  - `gemini-claude-opus-4-5-thinking`, `gemini-claude-sonnet-4-5-thinking`, etc.
+  - Enables extended thinking with Antigravity authentication
+
+### Fixed
+- **Codex login timeout** - Fix login hanging when Google account selection takes >15 seconds (#123)
+- **ThinkingProxy model matching** - More precise detection of thinking models
+
+### Improved
+- **Settings UI** - Services with expired accounts now auto-expand to draw attention
+
+
 ## [1.8.39] - 2026-01-05
 
 ### Updated
