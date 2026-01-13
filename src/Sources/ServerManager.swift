@@ -80,10 +80,10 @@ class ServerManager: ObservableObject {
             completion(true)
             return
         }
-        
+
         // Clean up any orphaned processes from previous crashes
         killOrphanedProcesses()
-        
+
         // Use bundled binary from app bundle
         guard let resourcePath = Bundle.main.resourcePath else {
             addLog("❌ Error: Could not find resource path")

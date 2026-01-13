@@ -4,7 +4,21 @@ All notable changes to VibeProxy will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.8.48] - 2026-01-12
+## [1.8.50] - 2026-01-13
+
+### Fixed
+- **Amp CLI Login Flow** - Fixed OAuth login failing with "403 Invalid state parameter"
+  - Login now redirects directly to ampcode.com to preserve OAuth state cookies
+  - Browser stays on ampcode.com during authentication for proper cookie handling
+- **Amp CLI OAuth Integration** - Fixed "auth_unavailable" errors when using Amp CLI
+  - Enabled local OAuth providers (Claude, Codex, Gemini) for Amp requests
+  - Your subscriptions (Claude Max, ChatGPT Plus, Gemini) are now used through Amp
+  - Clear error when provider not authenticated (no silent fallback)
+
+### Changed
+- **Amp Request Routing** - Improved routing logic for Amp management vs provider requests
+  - Management requests (auth, user, threads) forwarded to ampcode.com
+  - Provider requests routed through CLIProxyAPI for local OAuth support
 
 ## [1.8.49] - 2026-01-13
 
