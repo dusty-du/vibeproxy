@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [1.8.50] - 2026-01-13
 
+### Added
+- **Provider Priority** - Enable/disable individual providers to avoid model conflicts ([#159](https://github.com/automazeio/vibeproxy/issues/159))
+  - Toggle switches in Settings UI to enable/disable each provider
+  - Disabled providers have all models excluded via `oauth-excluded-models`
+  - Changes apply instantly via hot reload (no restart needed)
+  - Useful when logged into multiple providers with overlapping models
+
 ### Fixed
 - **Amp CLI Login Flow** - Fixed OAuth login failing with "403 Invalid state parameter"
   - Login now redirects directly to ampcode.com to preserve OAuth state cookies
@@ -811,6 +818,7 @@ All future changes will be documented here before release.
 
 ---
 
+[1.8.50]: https://github.com/automazeio/vibeproxy/releases/tag/v1.8.50
 [1.8.49]: https://github.com/automazeio/vibeproxy/releases/tag/v1.8.49
 [1.8.47]: https://github.com/automazeio/vibeproxy/releases/tag/v1.8.47
 [1.8.46]: https://github.com/automazeio/vibeproxy/releases/tag/v1.8.46

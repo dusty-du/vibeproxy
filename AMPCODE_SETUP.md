@@ -67,7 +67,7 @@ amp "Say hello"
 
 ## How It Works
 
-```
+```text
 Amp CLI
   │
   ▼
@@ -88,6 +88,30 @@ http://localhost:8317 (VibeProxy)
   │
   └─► /api/* (management) ──────► https://ampcode.com
 ```
+
+## Provider Priority
+
+When logged into multiple providers (Claude, ChatGPT, Gemini, etc.), Amp may pick models from any of them. Use **Provider Priority** to control which providers are active.
+
+### Enable/Disable Providers
+
+In VibeProxy Settings, each provider has a toggle switch:
+- **Enabled** (default) - Provider's models are available to Amp
+- **Disabled** - Provider's models are excluded from Amp
+
+Changes apply instantly via hot reload - no restart needed.
+
+### Use Cases
+
+- **Single provider mode** - Disable all but one provider to ensure Amp always uses that provider
+- **Avoid rate limits** - Disable providers you've hit rate limits on
+- **Testing** - Quickly switch between providers to compare responses
+
+### Notes
+
+- When all providers are disabled, Amp falls back to its free tier (rate limited)
+- Provider toggles only affect model availability, not authentication status
+- You remain logged into disabled providers and can re-enable them anytime
 
 ## Troubleshooting
 

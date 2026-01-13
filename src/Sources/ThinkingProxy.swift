@@ -238,7 +238,8 @@ class ThinkingProxy {
         }
         
         // Check if this is an Amp management request (anything not targeting provider or /v1)
-        let isProviderPath = rewrittenPath.starts(with: "/api/provider/") || rewrittenPath.starts(with: "/provider/")
+        // Note: /provider/ paths are already rewritten to /api/provider/ above
+        let isProviderPath = rewrittenPath.starts(with: "/api/provider/")
         let isCliProxyPath = rewrittenPath.starts(with: "/v1/") || rewrittenPath.starts(with: "/api/v1/")
         if !isProviderPath && !isCliProxyPath {
             let ampPath = rewrittenPath
