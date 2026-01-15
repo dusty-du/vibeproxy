@@ -82,11 +82,28 @@ jobs:
           echo "Downloading: $URL"
           curl -L -f -o cliproxy.tar.gz "$URL"
           
-          # Extract to Resources
+          # Extract to temp dir and find binary
           mkdir -p src/Sources/Resources
-          tar -xzf cliproxy.tar.gz -C src/Sources/Resources/
-          mv src/Sources/Resources/CLIProxyAPIPlus src/Sources/Resources/cli-proxy-api-plus
+          TEMP_DIR=$(mktemp -d)
+          tar -xzf cliproxy.tar.gz -C "$TEMP_DIR"
+          
+          # Find the binary (could be CLIProxyAPIPlus or cli-proxy-api-plus)
+          BINARY=$(find "$TEMP_DIR" -type f \( -name "CLIProxyAPIPlus" -o -name "cli-proxy-api-plus" \) | head -1)
+          if [ -z "$BINARY" ]; then
+            # Fallback: find any executable that's not a text file
+            BINARY=$(find "$TEMP_DIR" -type f -perm +111 | head -1)
+          fi
+          
+          if [ -z "$BINARY" ]; then
+            echo "Error: Could not find binary in tarball" >&2
+            ls -la "$TEMP_DIR"
+            exit 1
+          fi
+          
+          echo "Found binary: $BINARY"
+          cp "$BINARY" src/Sources/Resources/cli-proxy-api-plus
           chmod +x src/Sources/Resources/cli-proxy-api-plus
+          rm -rf "$TEMP_DIR"
           
           # Verify
           file src/Sources/Resources/cli-proxy-api-plus
