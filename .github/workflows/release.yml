@@ -52,17 +52,24 @@ jobs:
           echo "Building version: ${VERSION} (build ${BUILD_NUMBER}) for ${{ matrix.arch }}"
 
       - name: Download CLIProxyAPIPlus for ${{ matrix.arch }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           
-          # Get latest CLIProxyAPIPlus release using gh CLI (handles auth automatically)
+          # Get latest CLIProxyAPIPlus release
           echo "Fetching latest CLIProxyAPIPlus release..."
-          LATEST_TAG=$(gh release view --repo router-for-me/CLIProxyAPIPlus --json tagName -q '.tagName')
+          LATEST_JSON=$(curl -s -f https://api.github.com/repos/router-for-me/CLIProxyAPIPlus/releases/latest)
+          
+          if [ -z "$LATEST_JSON" ]; then
+            echo "Error: Failed to fetch latest release JSON" >&2
+            exit 1
+          fi
+          
+          # Strip non-printable characters and extract tag
+          LATEST_TAG=$(echo "$LATEST_JSON" | tr -d '\000-\037' | jq -r .tag_name)
           
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-            echo "Error: Failed to get latest release tag" >&2
+            echo "Error: Failed to extract tag_name from JSON" >&2
+            echo "Response was: $LATEST_JSON"
             exit 1
           fi
           
@@ -86,11 +93,10 @@ jobs:
           ls -lh src/Sources/Resources/cli-proxy-api-plus
 
       - name: Download config.yaml
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          LATEST_TAG=$(gh release view --repo router-for-me/CLIProxyAPIPlus --json tagName -q '.tagName')
+          LATEST_JSON=$(curl -s -f https://api.github.com/repos/router-for-me/CLIProxyAPIPlus/releases/latest)
+          LATEST_TAG=$(echo "$LATEST_JSON" | tr -d '\000-\037' | jq -r .tag_name)
           echo "Downloading config.yaml from $LATEST_TAG"
           curl -L -f -o src/Sources/Resources/config.yaml \
             "https://github.com/router-for-me/CLIProxyAPIPlus/releases/download/$LATEST_TAG/config.yaml"
