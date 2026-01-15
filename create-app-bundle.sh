@@ -20,7 +20,12 @@ APP_DIR="$PROJECT_DIR/$APP_NAME.app"
 # Build the Swift executable first
 echo -e "${BLUE}Building Swift executable (release)...${NC}"
 cd "$SRC_DIR"
-swift build -c release
+if [ -n "$TARGET_ARCH" ]; then
+    echo "Building for architecture: $TARGET_ARCH"
+    swift build -c release --arch "$TARGET_ARCH"
+else
+    swift build -c release
+fi
 cd "$PROJECT_DIR"
 echo -e "${GREEN}✅ Build complete${NC}"
 
