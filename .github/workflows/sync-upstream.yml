@@ -139,24 +139,12 @@ jobs:
 
           echo "success=true" >> $GITHUB_OUTPUT
 
-  trigger-build:
-    name: Trigger Patched Release Build
+  # Call the patched-release workflow as a reusable workflow
+  build-release:
+    name: Build Patched Release
     needs: [check-upstream, sync-and-patch]
     if: needs.sync-and-patch.outputs.sync_success == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Trigger patched release workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          UPSTREAM_VERSION="${{ needs.check-upstream.outputs.upstream_version }}"
-          echo "Triggering patched release for version $UPSTREAM_VERSION"
-
-          gh workflow run patched-release.yml \
-            -f upstream_version="$UPSTREAM_VERSION"
+    uses: ./.github/workflows/patched-release.yml
+    with:
+      upstream_version: ${{ needs.check-upstream.outputs.upstream_version }}
+    secrets: inherit
