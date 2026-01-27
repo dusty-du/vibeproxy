@@ -240,11 +240,19 @@ apply_patches() {
         exit 1
     fi
 
-    # Reset managed files to HEAD (upstream state)
-    echo -e "${BLUE}Resetting managed files to upstream state...${NC}"
+    # Determine the upstream reference to reset to
+    # In CI, we have an 'upstream' remote; locally we use 'origin/main'
+    if git remote | grep -q '^upstream$'; then
+        UPSTREAM_REF="upstream/main"
+    else
+        UPSTREAM_REF="origin/main"
+    fi
+
+    # Reset managed files to upstream state
+    echo -e "${BLUE}Resetting managed files to upstream state ($UPSTREAM_REF)...${NC}"
     for file in "${MANAGED_FILES[@]}"; do
         if [ -f "$PROJECT_DIR/$file" ]; then
-            git checkout HEAD -- "$file" 2>/dev/null || true
+            git checkout "$UPSTREAM_REF" -- "$file" 2>/dev/null || git checkout HEAD -- "$file" 2>/dev/null || true
             echo -e "  ${GREEN}Reset${NC} $file"
         fi
     done
