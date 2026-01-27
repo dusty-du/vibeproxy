@@ -52,10 +52,24 @@ class ServerManager: ObservableObject {
     /// Provider enabled states - when disabled, models are excluded via oauth-excluded-models
     @Published var enabledProviders: [String: Bool] = [:] {
         didSet {
-            // Persist to UserDefaults
             UserDefaults.standard.set(enabledProviders, forKey: "enabledProviders")
         }
     }
+
+    /// Vercel AI Gateway configuration for Claude requests
+    @Published var vercelGatewayEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(vercelGatewayEnabled, forKey: "vercelGatewayEnabled")
+            onVercelConfigChanged?()
+        }
+    }
+    @Published var vercelApiKey: String = "" {
+        didSet {
+            UserDefaults.standard.set(vercelApiKey, forKey: "vercelApiKey")
+            onVercelConfigChanged?()
+        }
+    }
+    var onVercelConfigChanged: (() -> Void)?
 
     /// Helper class to capture output text across closures
     private class OutputCapture {
@@ -85,10 +99,11 @@ class ServerManager: ObservableObject {
 
     init() {
         logBuffer = RingBuffer(capacity: maxLogLines)
-        // Load persisted provider states
         if let saved = UserDefaults.standard.dictionary(forKey: "enabledProviders") as? [String: Bool] {
             enabledProviders = saved
         }
+        vercelGatewayEnabled = UserDefaults.standard.bool(forKey: "vercelGatewayEnabled")
+        vercelApiKey = UserDefaults.standard.string(forKey: "vercelApiKey") ?? ""
     }
 
     /// Check if a provider is enabled (defaults to true if not set)

@@ -39,18 +39,66 @@ struct AccountRowView: View {
     }
 }
 
+/// Vercel AI Gateway controls shown in Claude expanded section
+struct VercelGatewayControls: View {
+    @ObservedObject var serverManager: ServerManager
+    @State private var showingSaved = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $serverManager.vercelGatewayEnabled) {
+                Text("Use Vercel AI Gateway")
+                    .font(.caption)
+            }
+            .toggleStyle(.checkbox)
+            .help("Route Claude requests through Vercel AI Gateway for safer access to your Claude Max subscription")
+            
+            if serverManager.vercelGatewayEnabled {
+                HStack(spacing: 8) {
+                    Text("Vercel API key")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    SecureField("", text: $serverManager.vercelApiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                        .font(.caption)
+                    
+                    if showingSaved {
+                        Text("Saved")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    } else {
+                        Button("Save") {
+                            showingSaved = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                showingSaved = false
+                            }
+                        }
+                        .controlSize(.small)
+                        .disabled(serverManager.vercelApiKey.isEmpty)
+                    }
+                }
+            }
+        }
+        .padding(.leading, 28)
+        .padding(.top, 4)
+    }
+}
+
 /// A row displaying a service with its connected accounts and add button
-struct ServiceRow: View {
+struct ServiceRow<ExtraContent: View>: View {
     let serviceType: ServiceType
     let iconName: String
     let accounts: [AuthAccount]
     let isAuthenticating: Bool
     let helpText: String?
     let isEnabled: Bool
+    let customTitle: String?
     let onConnect: () -> Void
     let onDisconnect: (AuthAccount) -> Void
     let onToggleEnabled: (Bool) -> Void
     var onExpandChange: ((Bool) -> Void)? = nil
+    @ViewBuilder var extraContent: () -> ExtraContent
 
     @State private var isExpanded = false
     @State private var accountToRemove: AuthAccount?
@@ -59,6 +107,10 @@ struct ServiceRow: View {
     private var activeCount: Int { accounts.filter { !$0.isExpired }.count }
     private var expiredCount: Int { accounts.filter { $0.isExpired }.count }
     private let removeColor = Color(red: 0xeb/255, green: 0x0f/255, blue: 0x0f/255)
+    
+    private var displayTitle: String {
+        customTitle ?? serviceType.displayName
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -81,14 +133,9 @@ struct ServiceRow: View {
                         .frame(width: 20, height: 20)
                         .opacity(isEnabled ? 1.0 : 0.4)
                 }
-                Text(serviceType.displayName)
+                Text(displayTitle)
                     .fontWeight(.medium)
                     .foregroundColor(isEnabled ? .primary : .secondary)
-                if !isEnabled {
-                    Text("(disabled)")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
                 Spacer()
                 if isAuthenticating {
                     ProgressView()
@@ -137,6 +184,7 @@ struct ServiceRow: View {
                                     showingRemoveConfirmation = true
                                 }
                             }
+                            extraContent()
                         }
                         .padding(.top, 4)
                     }
@@ -257,11 +305,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .antigravity,
                         helpText: "Antigravity provides OAuth-based access to various AI models including Gemini and Claude. One login gives you access to multiple AI services.",
                         isEnabled: serverManager.isProviderEnabled("antigravity"),
+                        customTitle: nil,
                         onConnect: { connectService(.antigravity) },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("antigravity", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
 
                     ServiceRow(
                         serviceType: .claude,
@@ -270,11 +319,14 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .claude,
                         helpText: nil,
                         isEnabled: serverManager.isProviderEnabled("claude"),
+                        customTitle: serverManager.vercelGatewayEnabled && !serverManager.vercelApiKey.isEmpty ? "Claude Code (via Vercel)" : nil,
                         onConnect: { connectService(.claude) },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("claude", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) {
+                        VercelGatewayControls(serverManager: serverManager)
+                    }
 
                     ServiceRow(
                         serviceType: .codex,
@@ -283,11 +335,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .codex,
                         helpText: nil,
                         isEnabled: serverManager.isProviderEnabled("codex"),
+                        customTitle: nil,
                         onConnect: { connectService(.codex) },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("codex", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
 
                     ServiceRow(
                         serviceType: .gemini,
@@ -296,11 +349,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .gemini,
                         helpText: "⚠️ Note: If you're an existing Gemini user with multiple projects, authentication will use your default project. Set your desired project as default in Google AI Studio before connecting.",
                         isEnabled: serverManager.isProviderEnabled("gemini"),
+                        customTitle: nil,
                         onConnect: { connectService(.gemini) },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("gemini", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
 
                     ServiceRow(
                         serviceType: .copilot,
@@ -309,11 +363,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .copilot,
                         helpText: "GitHub Copilot provides access to Claude, GPT, Gemini and other models via your Copilot subscription.",
                         isEnabled: serverManager.isProviderEnabled("github-copilot"),
+                        customTitle: nil,
                         onConnect: { connectService(.copilot) },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("github-copilot", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
 
                     ServiceRow(
                         serviceType: .qwen,
@@ -322,11 +377,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .qwen,
                         helpText: nil,
                         isEnabled: serverManager.isProviderEnabled("qwen"),
+                        customTitle: nil,
                         onConnect: { showingQwenEmailPrompt = true },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("qwen", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
 
                     ServiceRow(
                         serviceType: .zai,
@@ -335,11 +391,12 @@ struct SettingsView: View {
                         isAuthenticating: authenticatingService == .zai,
                         helpText: "Z.AI GLM provides access to GLM-4.7 and other models via API key. Get your key at https://z.ai/manage-apikey/apikey-list",
                         isEnabled: serverManager.isProviderEnabled("zai"),
+                        customTitle: nil,
                         onConnect: { showingZaiApiKeyPrompt = true },
                         onDisconnect: { account in disconnectAccount(account) },
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("zai", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    )
+                    ) { EmptyView() }
                 }
             }
             .formStyle(.grouped)

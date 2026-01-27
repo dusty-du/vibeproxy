@@ -29,6 +29,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
         // Initialize managers
         serverManager = ServerManager()
         thinkingProxy = ThinkingProxy()
+
+        // Sync Vercel AI Gateway config from ServerManager to ThinkingProxy
+        syncVercelConfig()
+        serverManager.onVercelConfigChanged = { [weak self] in
+            self?.syncVercelConfig()
+        }
         
         // Warm commonly used icons to avoid first-use disk hits
         preloadIcons()
@@ -348,6 +354,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
         return .terminateNow
     }
     
+    // MARK: - Vercel Config Sync
+
+    private func syncVercelConfig() {
+        thinkingProxy.vercelConfig = VercelGatewayConfig(
+            enabled: serverManager.vercelGatewayEnabled,
+            apiKey: serverManager.vercelApiKey
+        )
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
     
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
