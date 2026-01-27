@@ -407,7 +407,7 @@ struct SettingsView: View {
             }
             .padding(.bottom, 12)
         }
-        .frame(width: 480, height: 740)
+        .frame(width: 480, height: 810)
         .sheet(isPresented: $showingQwenEmailPrompt) {
             VStack(spacing: 16) {
                 Text("Qwen Account Email")

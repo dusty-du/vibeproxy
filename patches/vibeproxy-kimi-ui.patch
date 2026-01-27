@@ -50,7 +50,7 @@ index ccf49bf..0e411d2 100644
 +    case kimiLogin
  }
 diff --git a/src/Sources/SettingsView.swift b/src/Sources/SettingsView.swift
-index 92b8241..070009e 100644
+index 92b8241..36bfeb8 100644
 --- a/src/Sources/SettingsView.swift
 +++ b/src/Sources/SettingsView.swift
 @@ -340,6 +340,19 @@ struct SettingsView: View {
@@ -73,6 +73,15 @@ index 92b8241..070009e 100644
                  }
              }
              .formStyle(.grouped)
+@@ -394,7 +407,7 @@ struct SettingsView: View {
+             }
+             .padding(.bottom, 12)
+         }
+-        .frame(width: 480, height: 740)
++        .frame(width: 480, height: 810)
+         .sheet(isPresented: $showingQwenEmailPrompt) {
+             VStack(spacing: 16) {
+                 Text("Qwen Account Email")
 @@ -506,6 +519,7 @@ struct SettingsView: View {
          case .zai:
              authenticatingService = nil
