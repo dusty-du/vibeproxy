@@ -1,0 +1,361 @@
+name: Build Patched Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_version:
+        description: 'Upstream version to release (e.g., 1.8.69)'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      upstream_version:
+        description: 'Upstream version to release'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  # CLIProxyAPIPlus repository
+  CLIPROXY_REPO: router-for-me/CLIProxyAPIPlus
+  # Go version for building CLIProxyAPIPlus
+  GO_VERSION: '1.23'
+
+jobs:
+  build-cliproxy:
+    name: Build CLIProxyAPIPlus with Kimi (${{ matrix.arch }})
+    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            goarch: arm64
+          - arch: x86_64
+            goarch: amd64
+
+    outputs:
+      cliproxy_version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout fork (for patches)
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Clone CLIProxyAPIPlus
+        run: |
+          # Get latest CLIProxyAPIPlus release tag
+          CLIPROXY_TAG=$(gh release view --repo ${{ env.CLIPROXY_REPO }} --json tagName -q '.tagName')
+          echo "Building CLIProxyAPIPlus $CLIPROXY_TAG"
+
+          git clone --depth 1 --branch "$CLIPROXY_TAG" \
+            https://github.com/${{ env.CLIPROXY_REPO }}.git \
+            cliproxy-src
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Get CLIProxyAPIPlus version
+        id: version
+        run: |
+          cd cliproxy-src
+          VERSION=$(git describe --tags --always)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "CLIProxyAPIPlus version: $VERSION"
+
+      - name: Apply Kimi support patch
+        run: |
+          cd cliproxy-src
+
+          echo "Applying Kimi support patch..."
+          if git apply ../patches/cliproxyapiplus-kimi-support.patch; then
+            echo "Kimi patch applied successfully"
+          else
+            echo "Failed to apply Kimi patch cleanly, trying with 3-way merge..."
+            git apply --3way ../patches/cliproxyapiplus-kimi-support.patch || {
+              echo "Patch failed. Listing conflicts:"
+              git status
+              exit 1
+            }
+          fi
+
+      - name: Build CLIProxyAPIPlus
+        run: |
+          cd cliproxy-src
+
+          export GOOS=darwin
+          export GOARCH=${{ matrix.goarch }}
+          export CGO_ENABLED=0
+
+          echo "Building for darwin/${{ matrix.goarch }}..."
+
+          go build -ldflags="-s -w" -o cli-proxy-api-plus-${{ matrix.arch }} ./cmd/server
+
+          file cli-proxy-api-plus-${{ matrix.arch }}
+
+      - name: Upload CLIProxyAPIPlus binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliproxy-${{ matrix.arch }}
+          path: cliproxy-src/cli-proxy-api-plus-${{ matrix.arch }}
+          retention-days: 1
+
+  build-app:
+    name: Build VibeProxy App (${{ matrix.arch }})
+    needs: build-cliproxy
+    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            swift_arch: arm64
+          - arch: x86_64
+            swift_arch: x86_64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.9"
+
+      - name: Download CLIProxyAPIPlus binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cliproxy-${{ matrix.arch }}
+          path: src/Sources/Resources/
+
+      - name: Prepare CLIProxyAPIPlus binary
+        run: |
+          mv src/Sources/Resources/cli-proxy-api-plus-${{ matrix.arch }} src/Sources/Resources/cli-proxy-api-plus
+          chmod +x src/Sources/Resources/cli-proxy-api-plus
+          file src/Sources/Resources/cli-proxy-api-plus
+
+      - name: Get version info
+        id: get_version
+        run: |
+          VERSION="${{ inputs.upstream_version }}"
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION} (build ${BUILD_NUMBER}) for ${{ matrix.arch }}"
+
+      - name: Build app bundle (ad-hoc signed)
+        env:
+          APP_VERSION: ${{ steps.get_version.outputs.VERSION }}
+          TARGET_ARCH: ${{ matrix.swift_arch }}
+        run: |
+          chmod +x create-app-bundle.sh
+
+          # Modify the script to use ad-hoc signing if no identity is available
+          # The script will fall back to ad-hoc signing when CODESIGN_IDENTITY is not set
+          ./create-app-bundle.sh
+
+      - name: Ad-hoc sign the app
+        run: |
+          # Re-sign with ad-hoc identity to ensure all components are signed
+          codesign --force --deep --sign - VibeProxy.app
+
+          # Verify signature
+          codesign --verify --deep --strict --verbose=2 VibeProxy.app || echo "Verification warning (expected for ad-hoc)"
+
+      - name: Create ZIP archive
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "VibeProxy.app" "VibeProxy-${{ matrix.arch }}.zip"
+
+      - name: Calculate checksums
+        run: |
+          shasum -a 256 VibeProxy-${{ matrix.arch }}.zip > VibeProxy-${{ matrix.arch }}.zip.sha256
+
+      - name: Sign update for Sparkle (arm64 only)
+        if: matrix.arch == 'arm64'
+        id: sparkle_sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "Warning: SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
+            echo "ed_signature=" >> $GITHUB_OUTPUT
+            echo "length=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          SIGN_UPDATE=$(find src/.build -name "sign_update" -type f | grep -v old_dsa | head -1)
+
+          if [ -z "$SIGN_UPDATE" ]; then
+            echo "Error: sign_update not found"
+            find src/.build -name "sign_update" -type f || true
+            echo "ed_signature=" >> $GITHUB_OUTPUT
+            echo "length=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Using sign_update: $SIGN_UPDATE"
+          SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" VibeProxy-${{ matrix.arch }}.zip --ed-key-file -)
+
+          ED_SIGNATURE=$(echo "$SIGNATURE" | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"$//')
+          LENGTH=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)
+
+          echo "ed_signature=$ED_SIGNATURE" >> $GITHUB_OUTPUT
+          echo "length=$LENGTH" >> $GITHUB_OUTPUT
+          echo "Sparkle signature generated"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibeproxy-${{ matrix.arch }}
+          path: |
+            VibeProxy-${{ matrix.arch }}.zip
+            VibeProxy-${{ matrix.arch }}.zip.sha256
+          retention-days: 1
+
+      - name: Save Sparkle signature (arm64 only)
+        if: matrix.arch == 'arm64'
+        run: |
+          echo "${{ steps.sparkle_sign.outputs.ed_signature }}" > sparkle_signature.txt
+          echo "${{ steps.sparkle_sign.outputs.length }}" > sparkle_length.txt
+
+      - name: Upload Sparkle signature (arm64 only)
+        if: matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkle-signature
+          path: |
+            sparkle_signature.txt
+            sparkle_length.txt
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [build-cliproxy, build-app]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp artifacts/vibeproxy-arm64/* release/ || true
+          cp artifacts/vibeproxy-x86_64/* release/ || true
+          ls -la release/
+
+      - name: Download Sparkle signature
+        uses: actions/download-artifact@v4
+        with:
+          name: sparkle-signature
+          path: sparkle
+
+      - name: Update appcast.xml
+        run: |
+          VERSION="${{ inputs.upstream_version }}"
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          ED_SIGNATURE=$(cat sparkle/sparkle_signature.txt 2>/dev/null || echo "")
+          LENGTH=$(cat sparkle/sparkle_length.txt 2>/dev/null || echo "0")
+          TODAY=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+          # Check if we have a valid signature
+          if [ -z "$ED_SIGNATURE" ]; then
+            echo "Warning: No Sparkle signature available, skipping appcast update"
+            exit 0
+          fi
+
+          cat > /tmp/new_item.xml << ENDOFITEM
+              <item>
+                <title>Version ${VERSION}</title>
+                <sparkle:version>${BUILD_NUMBER}</sparkle:version>
+                <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+                <pubDate>${TODAY}</pubDate>
+                <enclosure url="https://github.com/dusty-du/vibeproxy/releases/download/v${VERSION}/VibeProxy-arm64.zip"
+                           type="application/octet-stream"
+                           sparkle:edSignature="${ED_SIGNATURE}"
+                           length="${LENGTH}"/>
+              </item>
+          ENDOFITEM
+
+          # Insert new item after <language>en</language>
+          sed -i '/<language>en<\/language>/r /tmp/new_item.xml' appcast.xml
+          rm -f /tmp/new_item.xml
+
+          echo "Updated appcast.xml with version ${VERSION}"
+          head -30 appcast.xml
+
+      - name: Commit appcast.xml
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "Update appcast.xml for v${{ inputs.upstream_version }}" || echo "No changes to commit"
+          git push origin main
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ inputs.upstream_version }}
+          name: VibeProxy ${{ inputs.upstream_version }} (Patched)
+          files: |
+            release/VibeProxy-arm64.zip
+            release/VibeProxy-arm64.zip.sha256
+            release/VibeProxy-x86_64.zip
+            release/VibeProxy-x86_64.zip.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            ## VibeProxy ${{ inputs.upstream_version }} (Patched Fork)
+
+            This is a patched build from [dusty-du/vibeproxy](https://github.com/dusty-du/vibeproxy) with the following customizations:
+
+            ### Patches Applied
+            - **Kimi Support**: Added Kimi (Moonshot AI) provider integration
+            - **Custom Sparkle Feed**: Auto-updates point to this fork
+
+            ### Downloads
+
+            | Architecture | ZIP |
+            |--------------|-----|
+            | **Apple Silicon** (M1/M2/M3) | `VibeProxy-arm64.zip` |
+            | **Intel** (x86_64) | `VibeProxy-x86_64.zip` |
+
+            ### Installation
+
+            1. Download the appropriate ZIP for your Mac
+            2. Extract and drag VibeProxy to Applications
+            3. **First launch**: Right-click → Open (required for ad-hoc signed apps)
+            4. Subsequent launches work normally
+
+            > **Note**: This build is ad-hoc signed (not notarized). You'll see a Gatekeeper warning on first launch. Right-click and select "Open" to bypass.
+
+            ### Verification
+
+            ```bash
+            shasum -a 256 -c VibeProxy-arm64.zip.sha256
+            ```
+
+            ### Upstream Version
+
+            Based on [automazeio/vibeproxy v${{ inputs.upstream_version }}](https://github.com/automazeio/vibeproxy/releases/tag/v${{ inputs.upstream_version }})
+
+            ---
+
+            Built with CLIProxyAPIPlus ${{ needs.build-cliproxy.outputs.cliproxy_version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

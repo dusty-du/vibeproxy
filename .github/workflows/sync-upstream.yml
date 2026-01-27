@@ -1,0 +1,162 @@
+name: Sync Upstream and Build
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:        # Manual trigger
+    inputs:
+      force_build:
+        description: 'Force build even if no new upstream release'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  check-upstream:
+    name: Check for New Upstream Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_release: ${{ steps.check.outputs.new_release }}
+      upstream_version: ${{ steps.check.outputs.upstream_version }}
+      upstream_tag: ${{ steps.check.outputs.upstream_tag }}
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new upstream release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get latest upstream release tag
+          UPSTREAM_TAG=$(gh release view --repo automazeio/vibeproxy --json tagName -q '.tagName' 2>/dev/null || echo "")
+
+          if [ -z "$UPSTREAM_TAG" ]; then
+            echo "Failed to get upstream release tag"
+            echo "new_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          UPSTREAM_VERSION=${UPSTREAM_TAG#v}
+          echo "Latest upstream: $UPSTREAM_TAG (version $UPSTREAM_VERSION)"
+
+          # Get our latest release tag
+          OUR_TAG=$(gh release view --json tagName -q '.tagName' 2>/dev/null || echo "")
+          OUR_VERSION=${OUR_TAG#v}
+          echo "Our latest: $OUR_TAG (version $OUR_VERSION)"
+
+          # Check if we need to sync
+          if [ "$UPSTREAM_TAG" = "$OUR_TAG" ]; then
+            echo "Already synced with upstream $UPSTREAM_TAG"
+            echo "new_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "New upstream release detected: $UPSTREAM_TAG"
+            echo "new_release=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "upstream_version=$UPSTREAM_VERSION" >> $GITHUB_OUTPUT
+          echo "upstream_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+  sync-and-patch:
+    name: Sync and Apply Patches
+    needs: check-upstream
+    if: needs.check-upstream.outputs.new_release == 'true' || github.event.inputs.force_build == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      sync_success: ${{ steps.sync.outputs.success }}
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/automazeio/vibeproxy.git || true
+          git fetch upstream --tags
+
+      - name: Sync with upstream
+        id: sync
+        run: |
+          set -e
+
+          UPSTREAM_TAG="${{ needs.check-upstream.outputs.upstream_tag }}"
+          echo "Syncing to upstream tag: $UPSTREAM_TAG"
+
+          # Create a new branch for the sync
+          SYNC_BRANCH="sync-upstream-$UPSTREAM_TAG"
+          git checkout -b "$SYNC_BRANCH" main
+
+          # Merge upstream tag
+          echo "Merging upstream $UPSTREAM_TAG..."
+          if git merge "$UPSTREAM_TAG" -m "Merge upstream $UPSTREAM_TAG" --no-edit; then
+            echo "Merge successful"
+          else
+            echo "Merge conflicts detected, resolving..."
+            # For conflicts in managed files, prefer upstream version
+            # These will be re-patched by update.sh
+            git checkout --theirs src/Sources/AuthStatus.swift || true
+            git checkout --theirs src/Sources/ServerManager.swift || true
+            git checkout --theirs src/Sources/SettingsView.swift || true
+            git checkout --theirs src/Info.plist || true
+            git checkout --theirs src/Sources/AppDelegate.swift || true
+            git add -A
+            git commit -m "Merge upstream $UPSTREAM_TAG (resolved conflicts)" --no-edit || true
+          fi
+
+          # Apply patches
+          echo "Applying patches..."
+          chmod +x update.sh
+          ./update.sh --apply
+
+          # Commit patched changes
+          git add -A
+          git commit -m "Apply fork patches for $UPSTREAM_TAG" || echo "No patch changes to commit"
+
+          # Push the sync branch
+          git push origin "$SYNC_BRANCH" --force
+
+          # Update main branch
+          git checkout main
+          git merge "$SYNC_BRANCH" --no-edit
+          git push origin main
+
+          # Clean up sync branch
+          git push origin --delete "$SYNC_BRANCH" || true
+
+          echo "success=true" >> $GITHUB_OUTPUT
+
+  trigger-build:
+    name: Trigger Patched Release Build
+    needs: [check-upstream, sync-and-patch]
+    if: needs.sync-and-patch.outputs.sync_success == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Trigger patched release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          UPSTREAM_VERSION="${{ needs.check-upstream.outputs.upstream_version }}"
+          echo "Triggering patched release for version $UPSTREAM_VERSION"
+
+          gh workflow run patched-release.yml \
+            -f upstream_version="$UPSTREAM_VERSION"
