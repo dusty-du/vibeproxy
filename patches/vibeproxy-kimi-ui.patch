@@ -21,10 +21,10 @@ index f5ee1a5..0207da7 100644
      }
  }
 diff --git a/src/Sources/ServerManager.swift b/src/Sources/ServerManager.swift
-index ccf49bf..0e411d2 100644
+index 8edd4b6..6a4f516 100644
 --- a/src/Sources/ServerManager.swift
 +++ b/src/Sources/ServerManager.swift
-@@ -80,7 +80,8 @@ class ServerManager: ObservableObject {
+@@ -94,7 +94,8 @@ class ServerManager: ObservableObject {
          "gemini": "gemini-cli",
          "github-copilot": "github-copilot",
          "antigravity": "antigravity",
@@ -34,29 +34,32 @@ index ccf49bf..0e411d2 100644
      ]
  
      init() {
-@@ -282,6 +283,8 @@ class ServerManager: ObservableObject {
+@@ -297,8 +298,10 @@ class ServerManager: ObservableObject {
              qwenEmail = email
          case .antigravityLogin:
              authProcess.arguments = ["--config", configPath, "-antigravity-login"]
 +        case .kimiLogin:
 +            authProcess.arguments = ["--config", configPath, "-kimi-login"]
          }
-         
+-        
++
          // Create pipes for output
-@@ -660,4 +663,5 @@ enum AuthCommand: Equatable {
+         let outputPipe = Pipe()
+         let errorPipe = Pipe()
+@@ -675,4 +678,5 @@ enum AuthCommand: Equatable {
      case geminiLogin
      case qwenLogin(email: String)
      case antigravityLogin
 +    case kimiLogin
  }
 diff --git a/src/Sources/SettingsView.swift b/src/Sources/SettingsView.swift
-index 92b8241..36bfeb8 100644
+index fe00a5e..b2b8072 100644
 --- a/src/Sources/SettingsView.swift
 +++ b/src/Sources/SettingsView.swift
-@@ -340,6 +340,19 @@ struct SettingsView: View {
+@@ -397,6 +397,20 @@ struct SettingsView: View {
                          onToggleEnabled: { enabled in serverManager.setProviderEnabled("zai", enabled: enabled) },
                          onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                     )
+                     ) { EmptyView() }
 +
 +                    ServiceRow(
 +                        serviceType: .kimi,
@@ -65,15 +68,16 @@ index 92b8241..36bfeb8 100644
 +                        isAuthenticating: authenticatingService == .kimi,
 +                        helpText: "Kimi (Moonshot AI) provides access to K2 and other models via OAuth device flow.",
 +                        isEnabled: serverManager.isProviderEnabled("kimi"),
++                        customTitle: nil,
 +                        onConnect: { connectService(.kimi) },
 +                        onDisconnect: { account in disconnectAccount(account) },
 +                        onToggleEnabled: { enabled in serverManager.setProviderEnabled("kimi", enabled: enabled) },
 +                        onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-+                    )
++                    ) { EmptyView() }
                  }
              }
              .formStyle(.grouped)
-@@ -394,7 +407,7 @@ struct SettingsView: View {
+@@ -451,7 +465,7 @@ struct SettingsView: View {
              }
              .padding(.bottom, 12)
          }
@@ -82,15 +86,18 @@ index 92b8241..36bfeb8 100644
          .sheet(isPresented: $showingQwenEmailPrompt) {
              VStack(spacing: 16) {
                  Text("Qwen Account Email")
-@@ -506,6 +519,7 @@ struct SettingsView: View {
+@@ -563,8 +577,9 @@ struct SettingsView: View {
          case .zai:
              authenticatingService = nil
              return // handled separately with API key prompt
 +        case .kimi: command = .kimiLogin
          }
-         
+-        
++
          serverManager.runAuthCommand(command) { success, output in
-@@ -547,6 +561,8 @@ struct SettingsView: View {
+             NSLog("[SettingsView] Auth completed - success: %d, output: %@", success, output)
+             DispatchQueue.main.async {
+@@ -604,9 +619,12 @@ struct SettingsView: View {
              return "🌐 Browser opened for Antigravity authentication.\n\nPlease complete the login in your browser."
          case .zai:
              return "✓ Z.AI API key added successfully.\n\nYou can now use GLM models through the proxy."
@@ -98,4 +105,9 @@ index 92b8241..36bfeb8 100644
 +            return "🌐 Browser opened for Kimi authentication.\n\nPlease complete the login in your browser.\n\nThe app will automatically detect your credentials."
          }
      }
-     
+-    
++
++
+     private func startQwenAuth(email: String) {
+         authenticatingService = .qwen
+         NSLog("[SettingsView] Starting Qwen authentication")
