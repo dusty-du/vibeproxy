@@ -1285,19 +1285,21 @@ index 0000000..80f124c
 +}
 diff --git a/internal/translator/kimi/openai/chat-completions/init.go b/internal/translator/kimi/openai/chat-completions/init.go
 new file mode 100644
-index 0000000..4a9dc79
+index 0000000..2818ca0
 --- /dev/null
 +++ b/internal/translator/kimi/openai/chat-completions/init.go
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,21 @@
 +package chat_completions
 +
 +import (
 +	. "github.com/router-for-me/CLIProxyAPI/v6/internal/constant"
 +	"github.com/router-for-me/CLIProxyAPI/v6/internal/interfaces"
 +	"github.com/router-for-me/CLIProxyAPI/v6/internal/translator/translator"
++	log "github.com/sirupsen/logrus"
 +)
 +
 +func init() {
++	log.Info("kimi translator: registering openai -> kimi translator")
 +	translator.Register(
 +		OpenAI,
 +		Kimi,
@@ -1310,10 +1312,10 @@ index 0000000..4a9dc79
 +}
 diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
 new file mode 100644
-index 0000000..76bdd74
+index 0000000..0b0c742
 --- /dev/null
 +++ b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,50 @@
 +package chat_completions
 +
 +import (
@@ -1326,10 +1328,11 @@ index 0000000..76bdd74
 +// reasoning_content field is present in assistant messages with tool_calls.
 +// This is required when thinking is enabled to pass validation.
 +func ConvertOpenAIRequestToKimi(modelName string, rawJSON []byte, stream bool) []byte {
-+	log.Debugf("kimi translator: processing request for model %s", modelName)
++	log.Infof("kimi translator: processing request for model %s", modelName)
 +
 +	messages := gjson.GetBytes(rawJSON, "messages")
 +	if !messages.Exists() || !messages.IsArray() {
++		log.Warn("kimi translator: no messages array found")
 +		return rawJSON
 +	}
 +
@@ -1346,12 +1349,12 @@ index 0000000..76bdd74
 +			path := "messages." + itoa(i) + ".reasoning_content"
 +			rawJSON, _ = sjson.SetRawBytes(rawJSON, path, []byte("null"))
 +			modified = true
-+			log.Debugf("kimi translator: added reasoning_content to message %d", i)
++			log.Infof("kimi translator: added reasoning_content to message %d", i)
 +		}
 +	}
 +
 +	if modified {
-+		log.Debug("kimi translator: request modified with reasoning_content")
++		log.Info("kimi translator: request modified with reasoning_content")
 +	}
 +	return rawJSON
 +}
