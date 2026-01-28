@@ -1310,16 +1310,49 @@ index 0000000..4a9dc79
 +}
 diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
 new file mode 100644
-index 0000000..435fbc6
+index 0000000..35de208
 --- /dev/null
 +++ b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,40 @@
 +package chat_completions
 +
-+// ConvertOpenAIRequestToKimi passes through OpenAI requests unchanged.
-+// Kimi uses OpenAI-compatible request format.
++import (
++	"github.com/tidwall/gjson"
++	"github.com/tidwall/sjson"
++)
++
++// ConvertOpenAIRequestToKimi processes OpenAI requests to ensure
++// reasoning_content field is present in assistant messages with tool_calls.
++// This is required when thinking is enabled to pass validation.
 +func ConvertOpenAIRequestToKimi(modelName string, rawJSON []byte, stream bool) []byte {
++	messages := gjson.GetBytes(rawJSON, "messages")
++	if !messages.Exists() || !messages.IsArray() {
++		return rawJSON
++	}
++
++	// Check each message and add reasoning_content where needed
++	for i, msg := range messages.Array() {
++		role := msg.Get("role").String()
++		if role != "assistant" {
++			continue
++		}
++
++		// If assistant message has tool_calls but no reasoning_content, add it
++		if msg.Get("tool_calls").Exists() && !msg.Get("reasoning_content").Exists() {
++			path := "messages." + itoa(i) + ".reasoning_content"
++			rawJSON, _ = sjson.SetBytes(rawJSON, path, nil)
++		}
++	}
++
 +	return rawJSON
++}
++
++// itoa converts an integer to string without importing strconv
++func itoa(i int) string {
++	if i < 10 {
++		return string(rune('0' + i))
++	}
++	return itoa(i/10) + string(rune('0'+i%10))
 +}
 diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_response.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_response.go
 new file mode 100644
