@@ -642,18 +642,6 @@ index 0000000..eb5f11f
 +	}
 +	fmt.Println("Kimi authentication successful!")
 +}
-diff --git a/internal/constant/constant.go b/internal/constant/constant.go
-index 1dbeecd..3a51c0a 100644
---- a/internal/constant/constant.go
-+++ b/internal/constant/constant.go
-@@ -27,4 +27,7 @@ const (
- 
- 	// Kiro represents the AWS CodeWhisperer (Kiro) provider identifier.
- 	Kiro = "kiro"
-+
-+	// Kimi represents the Moonshot AI Kimi provider identifier.
-+	Kimi = "kimi"
- )
 diff --git a/internal/registry/model_definitions_static_data.go b/internal/registry/model_definitions_static_data.go
 index b1a524f..63dce52 100644
 --- a/internal/registry/model_definitions_static_data.go
@@ -708,7 +696,7 @@ index b1a524f..63dce52 100644
  	return []*ModelInfo{
 diff --git a/internal/runtime/executor/kimi_executor.go b/internal/runtime/executor/kimi_executor.go
 new file mode 100644
-index 0000000..e5725a3
+index 0000000..dd21b3d
 --- /dev/null
 +++ b/internal/runtime/executor/kimi_executor.go
 @@ -0,0 +1,413 @@
@@ -791,7 +779,7 @@ index 0000000..e5725a3
 +	defer reporter.trackFailure(ctx, &err)
 +
 +	from := opts.SourceFormat
-+	to := sdktranslator.FromString("kimi")
++	to := sdktranslator.FromString("openai")
 +	originalPayload := bytes.Clone(req.Payload)
 +	if len(opts.OriginalRequest) > 0 {
 +		originalPayload = bytes.Clone(opts.OriginalRequest)
@@ -879,7 +867,7 @@ index 0000000..e5725a3
 +	defer reporter.trackFailure(ctx, &err)
 +
 +	from := opts.SourceFormat
-+	to := sdktranslator.FromString("kimi")
++	to := sdktranslator.FromString("openai")
 +	originalPayload := bytes.Clone(req.Payload)
 +	if len(opts.OriginalRequest) > 0 {
 +		originalPayload = bytes.Clone(opts.OriginalRequest)
@@ -1126,16 +1114,15 @@ index 0000000..e5725a3
 +	return model
 +}
 diff --git a/internal/runtime/executor/thinking_providers.go b/internal/runtime/executor/thinking_providers.go
-index 5a14367..ca49b5b 100644
+index 5a14367..b961db9 100644
 --- a/internal/runtime/executor/thinking_providers.go
 +++ b/internal/runtime/executor/thinking_providers.go
-@@ -7,5 +7,7 @@ import (
+@@ -7,5 +7,6 @@ import (
  	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/thinking/provider/gemini"
  	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/thinking/provider/geminicli"
  	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/thinking/provider/iflow"
 +	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/thinking/provider/kimi"
  	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/thinking/provider/openai"
-+	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/translator/kimi/openai/chat-completions"
  )
 diff --git a/internal/thinking/apply.go b/internal/thinking/apply.go
 index 58c2628..ce07603 100644
@@ -1282,146 +1269,6 @@ index 0000000..80f124c
 +
 +	result, _ := sjson.SetBytes(body, "reasoning_effort", effort)
 +	return result, nil
-+}
-diff --git a/internal/translator/kimi/openai/chat-completions/init.go b/internal/translator/kimi/openai/chat-completions/init.go
-new file mode 100644
-index 0000000..2818ca0
---- /dev/null
-+++ b/internal/translator/kimi/openai/chat-completions/init.go
-@@ -0,0 +1,21 @@
-+package chat_completions
-+
-+import (
-+	. "github.com/router-for-me/CLIProxyAPI/v6/internal/constant"
-+	"github.com/router-for-me/CLIProxyAPI/v6/internal/interfaces"
-+	"github.com/router-for-me/CLIProxyAPI/v6/internal/translator/translator"
-+	log "github.com/sirupsen/logrus"
-+)
-+
-+func init() {
-+	log.Info("kimi translator: registering openai -> kimi translator")
-+	translator.Register(
-+		OpenAI,
-+		Kimi,
-+		ConvertOpenAIRequestToKimi,
-+		interfaces.TranslateResponse{
-+			Stream:    ConvertKimiResponseToOpenAI,
-+			NonStream: ConvertKimiResponseToOpenAINonStream,
-+		},
-+	)
-+}
-diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
-new file mode 100644
-index 0000000..0b0c742
---- /dev/null
-+++ b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
-@@ -0,0 +1,50 @@
-+package chat_completions
-+
-+import (
-+	log "github.com/sirupsen/logrus"
-+	"github.com/tidwall/gjson"
-+	"github.com/tidwall/sjson"
-+)
-+
-+// ConvertOpenAIRequestToKimi processes OpenAI requests to ensure
-+// reasoning_content field is present in assistant messages with tool_calls.
-+// This is required when thinking is enabled to pass validation.
-+func ConvertOpenAIRequestToKimi(modelName string, rawJSON []byte, stream bool) []byte {
-+	log.Infof("kimi translator: processing request for model %s", modelName)
-+
-+	messages := gjson.GetBytes(rawJSON, "messages")
-+	if !messages.Exists() || !messages.IsArray() {
-+		log.Warn("kimi translator: no messages array found")
-+		return rawJSON
-+	}
-+
-+	modified := false
-+	// Check each message and add reasoning_content where needed
-+	for i, msg := range messages.Array() {
-+		role := msg.Get("role").String()
-+		if role != "assistant" {
-+			continue
-+		}
-+
-+		// If assistant message has tool_calls but no reasoning_content, add null value
-+		if msg.Get("tool_calls").Exists() && !msg.Get("reasoning_content").Exists() {
-+			path := "messages." + itoa(i) + ".reasoning_content"
-+			rawJSON, _ = sjson.SetRawBytes(rawJSON, path, []byte("null"))
-+			modified = true
-+			log.Infof("kimi translator: added reasoning_content to message %d", i)
-+		}
-+	}
-+
-+	if modified {
-+		log.Info("kimi translator: request modified with reasoning_content")
-+	}
-+	return rawJSON
-+}
-+
-+// itoa converts an integer to string without importing strconv
-+func itoa(i int) string {
-+	if i < 10 {
-+		return string(rune('0' + i))
-+	}
-+	return itoa(i/10) + string(rune('0'+i%10))
-+}
-diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_response.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_response.go
-new file mode 100644
-index 0000000..145a2ed
---- /dev/null
-+++ b/internal/translator/kimi/openai/chat-completions/kimi_openai_response.go
-@@ -0,0 +1,51 @@
-+package chat_completions
-+
-+import (
-+	"bytes"
-+	"context"
-+
-+	"github.com/tidwall/gjson"
-+	"github.com/tidwall/sjson"
-+)
-+
-+// ConvertKimiResponseToOpenAI transforms Kimi streaming responses to ensure
-+// reasoning_content field is present for thinking-enabled requests.
-+func ConvertKimiResponseToOpenAI(_ context.Context, _ string, originalRequestRawJSON, requestRawJSON, rawJSON []byte, param *any) []string {
-+	if bytes.HasPrefix(rawJSON, []byte("data:")) {
-+		rawJSON = bytes.TrimSpace(rawJSON[5:])
-+	}
-+	if bytes.Equal(rawJSON, []byte("[DONE]")) {
-+		return []string{}
-+	}
-+
-+	// Ensure reasoning_content exists in delta when tool_calls present
-+	result := gjson.ParseBytes(rawJSON)
-+	if delta := result.Get("choices.0.delta"); delta.Exists() {
-+		if delta.Get("tool_calls").Exists() && !delta.Get("reasoning_content").Exists() {
-+			rawJSON, _ = sjson.SetBytes(rawJSON, "choices.0.delta.reasoning_content", nil)
-+		}
-+	}
-+
-+	return []string{string(rawJSON)}
-+}
-+
-+// ConvertKimiResponseToOpenAINonStream transforms Kimi non-streaming responses to ensure
-+// reasoning_content field is present for thinking-enabled requests.
-+func ConvertKimiResponseToOpenAINonStream(_ context.Context, _ string, originalRequestRawJSON, requestRawJSON, rawJSON []byte, param *any) string {
-+	result := gjson.ParseBytes(rawJSON)
-+	choices := result.Get("choices")
-+	if !choices.Exists() || !choices.IsArray() {
-+		return string(rawJSON)
-+	}
-+
-+	// Ensure reasoning_content exists in all messages with tool_calls
-+	for i, choice := range choices.Array() {
-+		message := choice.Get("message")
-+		if message.Get("tool_calls").Exists() && !message.Get("reasoning_content").Exists() {
-+			path := "choices." + string(rune('0'+i)) + ".message.reasoning_content"
-+			rawJSON, _ = sjson.SetBytes(rawJSON, path, nil)
-+		}
-+	}
-+
-+	return string(rawJSON)
 +}
 diff --git a/sdk/auth/kimi.go b/sdk/auth/kimi.go
 new file mode 100644

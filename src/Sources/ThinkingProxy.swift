@@ -29,6 +29,8 @@ class ThinkingProxy {
     private let targetHost = "127.0.0.1"
     private(set) var isRunning = false
     private let stateQueue = DispatchQueue(label: "io.automaze.vibeproxy.thinking-proxy-state")
+    private let reasoningCacheQueue = DispatchQueue(label: "io.automaze.vibeproxy.kimi-reasoning-cache")
+    private var reasoningCache: [String: String] = [:]
 
     var vercelConfig = VercelGatewayConfig(enabled: false, apiKey: "")
     
@@ -38,6 +40,12 @@ class ThinkingProxy {
         static let headroomRatio = 0.1
         static let vercelGatewayHost = "ai-gateway.vercel.sh"
         static let anthropicVersion = "2023-06-01"
+    }
+    
+    private final class KimiStreamState {
+        var buffer = ""
+        var reasoning = ""
+        var toolCallIDs = Set<String>()
     }
     
     /**
@@ -190,7 +198,7 @@ class ThinkingProxy {
             sendError(to: connection, statusCode: 400, message: "Invalid request")
             return
         }
-        
+
         // Parse HTTP request
         let lines = requestString.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else {
@@ -267,6 +275,12 @@ class ThinkingProxy {
             if let result = processThinkingParameter(jsonString: bodyString) {
                 modifiedBody = result.0
                 thinkingEnabled = result.1
+            }
+        }
+
+        if method == "POST" && !modifiedBody.isEmpty {
+            if let cachedAdjusted = applyCachedKimiReasoning(jsonString: modifiedBody) {
+                modifiedBody = cachedAdjusted
             }
         }
         
@@ -390,6 +404,58 @@ class ThinkingProxy {
         return (jsonString, false)  // No transformation needed
     }
     
+    private func applyCachedKimiReasoning(jsonString: String) -> String? {
+        guard let jsonData = jsonString.data(using: .utf8),
+              var json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let model = json["model"] as? String else {
+            return nil
+        }
+        
+        guard model.lowercased().hasPrefix("kimi") else {
+            return nil
+        }
+        
+        guard var messages = json["messages"] as? [[String: Any]] else {
+            return jsonString
+        }
+        
+        var changed = false
+        for i in 0..<messages.count {
+            guard let role = messages[i]["role"] as? String, role == "assistant" else { continue }
+            guard let toolCalls = messages[i]["tool_calls"] as? [[String: Any]], !toolCalls.isEmpty else { continue }
+            if messages[i]["reasoning_content"] != nil {
+                continue
+            }
+            
+            let toolCallIDs = toolCalls.compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+            if toolCallIDs.isEmpty { continue }
+            
+            let cachedReasoning: String? = reasoningCacheQueue.sync {
+                for id in toolCallIDs {
+                    if let value = reasoningCache[id], !value.isEmpty {
+                        return value
+                    }
+                }
+                return nil
+            }
+            
+            if let cachedReasoning {
+                messages[i]["reasoning_content"] = cachedReasoning
+                changed = true
+            }
+        }
+        
+        if changed {
+            json["messages"] = messages
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json),
+               let modifiedString = String(data: modifiedData, encoding: .utf8) {
+                return modifiedString
+            }
+        }
+        
+        return jsonString
+    }
+
     /**
      Forwards Amp API requests to ampcode.com, stripping the /api/ prefix
      */
@@ -424,7 +490,7 @@ class ThinkingProxy {
                 forwardedRequest += "Content-Length: \(contentLength)\r\n"
                 forwardedRequest += "\r\n"
                 forwardedRequest += body
-                
+
                 // Send to ampcode.com
                 if let requestData = forwardedRequest.data(using: .utf8) {
                     targetConnection.send(content: requestData, completion: .contentProcessed({ error in
@@ -600,7 +666,7 @@ class ThinkingProxy {
                 forwardedRequest += "Content-Length: \(contentLength)\r\n"
                 forwardedRequest += "\r\n"
                 forwardedRequest += body
-                
+
                 if let requestData = forwardedRequest.data(using: .utf8) {
                     targetConnection.send(content: requestData, completion: .contentProcessed({ error in
                         if let error = error {
@@ -692,7 +758,7 @@ class ThinkingProxy {
                 forwardedRequest += "Content-Length: \(contentLength)\r\n"
                 forwardedRequest += "\r\n"
                 forwardedRequest += body
-                
+
                 // Send to CLIProxyAPI
                 if let requestData = forwardedRequest.data(using: .utf8) {
                     targetConnection.send(content: requestData, completion: .contentProcessed({ error in
@@ -732,6 +798,7 @@ class ThinkingProxy {
     private func receiveResponseWith404Retry(from targetConnection: NWConnection, originalConnection: NWConnection, 
                                              method: String, path: String, version: String, 
                                              headers: [(String, String)], body: String) {
+        let streamState = KimiStreamState()
         targetConnection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
             
@@ -770,6 +837,7 @@ class ThinkingProxy {
                 }
                 
                 // Not a 404 or already has /api/, forward response as-is
+                self.captureKimiReasoning(from: data, state: streamState)
                 originalConnection.send(content: data, completion: .contentProcessed({ sendError in
                     if let sendError = sendError {
                         NSLog("[ThinkingProxy] Send error: \(sendError)")
@@ -782,7 +850,7 @@ class ThinkingProxy {
                         }))
                     } else {
                         // Continue streaming
-                        self.streamNextChunk(from: targetConnection, to: originalConnection)
+                        self.streamNextChunk(from: targetConnection, to: originalConnection, streamState: streamState)
                     }
                 }))
             } else if isComplete {
@@ -800,13 +868,14 @@ class ThinkingProxy {
      */
     private func receiveResponse(from targetConnection: NWConnection, originalConnection: NWConnection) {
         // Start the streaming loop
-        streamNextChunk(from: targetConnection, to: originalConnection)
+        let streamState = KimiStreamState()
+        streamNextChunk(from: targetConnection, to: originalConnection, streamState: streamState)
     }
     
     /**
      Streams response chunks iteratively (uses async scheduling instead of recursion to avoid stack buildup)
      */
-    private func streamNextChunk(from targetConnection: NWConnection, to originalConnection: NWConnection) {
+    private func streamNextChunk(from targetConnection: NWConnection, to originalConnection: NWConnection, streamState: KimiStreamState? = nil) {
         targetConnection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
             
@@ -818,6 +887,9 @@ class ThinkingProxy {
             }
             
             if let data = data, !data.isEmpty {
+                if let streamState = streamState {
+                    self.captureKimiReasoning(from: data, state: streamState)
+                }
                 // Forward response chunk to original client
                 originalConnection.send(content: data, completion: .contentProcessed({ sendError in
                     if let sendError = sendError {
@@ -832,7 +904,7 @@ class ThinkingProxy {
                         }))
                     } else {
                         // Schedule next iteration of the streaming loop
-                        self.streamNextChunk(from: targetConnection, to: originalConnection)
+                        self.streamNextChunk(from: targetConnection, to: originalConnection, streamState: streamState)
                     }
                 }))
             } else if isComplete {
@@ -841,6 +913,91 @@ class ThinkingProxy {
                 originalConnection.send(content: nil, isComplete: true, completion: .contentProcessed({ _ in
                     originalConnection.cancel()
                 }))
+            }
+        }
+    }
+    
+    private func captureKimiReasoning(from data: Data, state: KimiStreamState) {
+        guard let text = String(data: data, encoding: .utf8) else { return }
+        state.buffer += text.replacingOccurrences(of: "\r", with: "")
+        
+        while let range = state.buffer.range(of: "\n\n") {
+            let event = String(state.buffer[..<range.lowerBound])
+            state.buffer.removeSubrange(state.buffer.startIndex..<range.upperBound)
+            let lines = event.split(separator: "\n", omittingEmptySubsequences: false)
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.hasPrefix("data:") else { continue }
+                let payload = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                if payload == "[DONE]" || payload.isEmpty { continue }
+                handleKimiSSEPayload(String(payload), state: state)
+            }
+        }
+    }
+    
+    private func handleKimiSSEPayload(_ payload: String, state: KimiStreamState) {
+        guard let jsonData = payload.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return
+        }
+        
+        if let model = json["model"] as? String, !model.lowercased().hasPrefix("kimi") {
+            return
+        }
+        
+        guard let choices = json["choices"] as? [[String: Any]], let choice = choices.first else {
+            return
+        }
+        
+        if let delta = choice["delta"] as? [String: Any] {
+            if let reasoning = delta["reasoning_content"] as? String {
+                state.reasoning += reasoning
+            }
+            if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
+                for toolCall in toolCalls {
+                    if let id = toolCall["id"] as? String, !id.isEmpty {
+                        state.toolCallIDs.insert(id)
+                    }
+                }
+            }
+        }
+        
+        if let message = choice["message"] as? [String: Any] {
+            if let reasoning = message["reasoning_content"] as? String {
+                state.reasoning += reasoning
+            }
+            if let toolCalls = message["tool_calls"] as? [[String: Any]] {
+                for toolCall in toolCalls {
+                    if let id = toolCall["id"] as? String, !id.isEmpty {
+                        state.toolCallIDs.insert(id)
+                    }
+                }
+            }
+        }
+        
+        if let finishReason = choice["finish_reason"] as? String, !finishReason.isEmpty {
+            commitKimiReasoningCache(state: state)
+        }
+    }
+    
+    private func commitKimiReasoningCache(state: KimiStreamState) {
+        let reasoning = state.reasoning
+        let toolCallIDs = state.toolCallIDs
+        state.reasoning = ""
+        state.toolCallIDs.removeAll()
+        
+        let trimmed = reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !toolCallIDs.isEmpty else { return }
+        
+        reasoningCacheQueue.async {
+            for id in toolCallIDs {
+                self.reasoningCache[id] = reasoning
+            }
+            if self.reasoningCache.count > 2000 {
+                let keys = Array(self.reasoningCache.keys.prefix(500))
+                for key in keys {
+                    self.reasoningCache.removeValue(forKey: key)
+                }
             }
         }
     }
@@ -891,4 +1048,5 @@ class ThinkingProxy {
             connection.cancel()
         }))
     }
+
 }
