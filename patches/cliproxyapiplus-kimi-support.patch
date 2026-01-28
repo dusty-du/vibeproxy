@@ -1310,7 +1310,7 @@ index 0000000..4a9dc79
 +}
 diff --git a/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
 new file mode 100644
-index 0000000..35de208
+index 0000000..fdb6b16
 --- /dev/null
 +++ b/internal/translator/kimi/openai/chat-completions/kimi_openai_request.go
 @@ -0,0 +1,40 @@
@@ -1337,10 +1337,10 @@ index 0000000..35de208
 +			continue
 +		}
 +
-+		// If assistant message has tool_calls but no reasoning_content, add it
++		// If assistant message has tool_calls but no reasoning_content, add null value
 +		if msg.Get("tool_calls").Exists() && !msg.Get("reasoning_content").Exists() {
 +			path := "messages." + itoa(i) + ".reasoning_content"
-+			rawJSON, _ = sjson.SetBytes(rawJSON, path, nil)
++			rawJSON, _ = sjson.SetRawBytes(rawJSON, path, []byte("null"))
 +		}
 +	}
 +
