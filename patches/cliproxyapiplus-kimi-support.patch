@@ -708,10 +708,10 @@ index b1a524f..63dce52 100644
  	return []*ModelInfo{
 diff --git a/internal/runtime/executor/kimi_executor.go b/internal/runtime/executor/kimi_executor.go
 new file mode 100644
-index 0000000..e5725a3
+index 0000000..acba640
 --- /dev/null
 +++ b/internal/runtime/executor/kimi_executor.go
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,445 @@
 +package executor
 +
 +import (
@@ -724,6 +724,7 @@ index 0000000..e5725a3
 +	"os"
 +	"path/filepath"
 +	"runtime"
++	"strconv"
 +	"strings"
 +	"time"
 +
@@ -734,6 +735,7 @@ index 0000000..e5725a3
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 +	log "github.com/sirupsen/logrus"
++	"github.com/tidwall/gjson"
 +	"github.com/tidwall/sjson"
 +)
 +
@@ -807,6 +809,10 @@ index 0000000..e5725a3
 +	if err != nil {
 +		return resp, err
 +	}
++
++	// Inject reasoning_content: null into assistant messages with tool_calls
++	// Required by Kimi API when thinking is enabled
++	body = injectReasoningContent(body)
 +
 +	requestedModel := payloadRequestedModel(opts, req.Model)
 +	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
@@ -895,6 +901,10 @@ index 0000000..e5725a3
 +	if err != nil {
 +		return nil, err
 +	}
++
++	// Inject reasoning_content: null into assistant messages with tool_calls
++	// Required by Kimi API when thinking is enabled
++	body = injectReasoningContent(body)
 +
 +	body, _ = sjson.SetBytes(body, "stream_options.include_usage", true)
 +	requestedModel := payloadRequestedModel(opts, req.Model)
@@ -1124,6 +1134,28 @@ index 0000000..e5725a3
 +		return model[5:]
 +	}
 +	return model
++}
++
++// injectReasoningContent adds reasoning_content: null to assistant messages with tool_calls.
++// This is required by Kimi API when thinking (reasoning_effort) is enabled.
++func injectReasoningContent(body []byte) []byte {
++	messages := gjson.GetBytes(body, "messages")
++	if !messages.Exists() || !messages.IsArray() {
++		return body
++	}
++
++	for i, msg := range messages.Array() {
++		role := msg.Get("role").String()
++		if role != "assistant" {
++			continue
++		}
++		// If assistant message has tool_calls but no reasoning_content, add null
++		if msg.Get("tool_calls").Exists() && !msg.Get("reasoning_content").Exists() {
++			path := "messages." + strconv.Itoa(i) + ".reasoning_content"
++			body, _ = sjson.SetRawBytes(body, path, []byte("null"))
++		}
++	}
++	return body
 +}
 diff --git a/internal/runtime/executor/thinking_providers.go b/internal/runtime/executor/thinking_providers.go
 index 5a14367..ca49b5b 100644
