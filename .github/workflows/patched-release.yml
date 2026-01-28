@@ -4,15 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       upstream_version:
-        description: 'Upstream version to release (e.g., 1.8.69)'
+        description: 'Upstream version to release (e.g., 1.8.70)'
         required: true
         type: string
+      patch_suffix:
+        description: 'Patch suffix for incremental updates (e.g., 01 → 1.8.70.01)'
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       upstream_version:
         description: 'Upstream version to release'
         required: true
         type: string
+      patch_suffix:
+        description: 'Patch suffix for incremental updates'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -127,7 +137,13 @@ jobs:
       - name: Get version info
         id: get_version
         run: |
-          VERSION="${{ inputs.upstream_version }}"
+          BASE_VERSION="${{ inputs.upstream_version }}"
+          PATCH_SUFFIX="${{ inputs.patch_suffix }}"
+          if [ -n "$PATCH_SUFFIX" ]; then
+            VERSION="${BASE_VERSION}.${PATCH_SUFFIX}"
+          else
+            VERSION="${BASE_VERSION}"
+          fi
           BUILD_NUMBER=$(git rev-list --count HEAD)
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
@@ -246,7 +262,13 @@ jobs:
 
       - name: Update appcast.xml
         run: |
-          VERSION="${{ inputs.upstream_version }}"
+          BASE_VERSION="${{ inputs.upstream_version }}"
+          PATCH_SUFFIX="${{ inputs.patch_suffix }}"
+          if [ -n "$PATCH_SUFFIX" ]; then
+            VERSION="${BASE_VERSION}.${PATCH_SUFFIX}"
+          else
+            VERSION="${BASE_VERSION}"
+          fi
           BUILD_NUMBER=$(git rev-list --count HEAD)
           ED_SIGNATURE=$(cat sparkle/sparkle_signature.txt 2>/dev/null || echo "")
           LENGTH=$(cat sparkle/sparkle_length.txt 2>/dev/null || echo "0")
@@ -281,18 +303,37 @@ jobs:
 
       - name: Commit appcast.xml
         run: |
+          BASE_VERSION="${{ inputs.upstream_version }}"
+          PATCH_SUFFIX="${{ inputs.patch_suffix }}"
+          if [ -n "$PATCH_SUFFIX" ]; then
+            VERSION="${BASE_VERSION}.${PATCH_SUFFIX}"
+          else
+            VERSION="${BASE_VERSION}"
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add appcast.xml
-          git commit -m "Update appcast.xml for v${{ inputs.upstream_version }}" || echo "No changes to commit"
+          git commit -m "Update appcast.xml for v${VERSION}" || echo "No changes to commit"
           git pull --rebase origin main || true
           git push origin main
+
+      - name: Compute release version
+        id: release_version
+        run: |
+          BASE_VERSION="${{ inputs.upstream_version }}"
+          PATCH_SUFFIX="${{ inputs.patch_suffix }}"
+          if [ -n "$PATCH_SUFFIX" ]; then
+            VERSION="${BASE_VERSION}.${PATCH_SUFFIX}"
+          else
+            VERSION="${BASE_VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ inputs.upstream_version }}
-          name: VibeProxy ${{ inputs.upstream_version }} (Patched)
+          tag_name: v${{ steps.release_version.outputs.version }}
+          name: VibeProxy ${{ steps.release_version.outputs.version }} (Patched)
           files: |
             release/VibeProxy-arm64.zip
             release/VibeProxy-arm64.zip.sha256
@@ -300,12 +341,12 @@ jobs:
           prerelease: false
           generate_release_notes: false
           body: |
-            ## VibeProxy ${{ inputs.upstream_version }} (Patched Fork)
+            ## VibeProxy ${{ steps.release_version.outputs.version }} (Patched Fork)
 
             This is a patched build from [dusty-du/vibeproxy](https://github.com/dusty-du/vibeproxy) with the following customizations:
 
             ### Patches Applied
-            - **Kimi Support**: Added Kimi (Moonshot AI) provider integration
+            - **Kimi Support**: Added Kimi (Moonshot AI) provider integration with thinking support
             - **Custom Sparkle Feed**: Auto-updates point to this fork
 
             ### Download
