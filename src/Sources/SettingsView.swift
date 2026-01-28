@@ -397,20 +397,6 @@ struct SettingsView: View {
                         onToggleEnabled: { enabled in serverManager.setProviderEnabled("zai", enabled: enabled) },
                         onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
                     ) { EmptyView() }
-
-                    ServiceRow(
-                        serviceType: .kimi,
-                        iconName: "icon-kimi.png",
-                        accounts: authManager.accounts(for: .kimi),
-                        isAuthenticating: authenticatingService == .kimi,
-                        helpText: "Kimi (Moonshot AI) provides access to K2 and other models via OAuth device flow.",
-                        isEnabled: serverManager.isProviderEnabled("kimi"),
-                        customTitle: nil,
-                        onConnect: { connectService(.kimi) },
-                        onDisconnect: { account in disconnectAccount(account) },
-                        onToggleEnabled: { enabled in serverManager.setProviderEnabled("kimi", enabled: enabled) },
-                        onExpandChange: { expanded in expandedRowCount += expanded ? 1 : -1 }
-                    ) { EmptyView() }
                 }
             }
             .formStyle(.grouped)
@@ -465,7 +451,7 @@ struct SettingsView: View {
             }
             .padding(.bottom, 12)
         }
-        .frame(width: 480, height: 810)
+        .frame(width: 480, height: 740)
         .sheet(isPresented: $showingQwenEmailPrompt) {
             VStack(spacing: 16) {
                 Text("Qwen Account Email")
@@ -577,9 +563,8 @@ struct SettingsView: View {
         case .zai:
             authenticatingService = nil
             return // handled separately with API key prompt
-        case .kimi: command = .kimiLogin
         }
-
+        
         serverManager.runAuthCommand(command) { success, output in
             NSLog("[SettingsView] Auth completed - success: %d, output: %@", success, output)
             DispatchQueue.main.async {
@@ -619,12 +604,9 @@ struct SettingsView: View {
             return "🌐 Browser opened for Antigravity authentication.\n\nPlease complete the login in your browser."
         case .zai:
             return "✓ Z.AI API key added successfully.\n\nYou can now use GLM models through the proxy."
-        case .kimi:
-            return "🌐 Browser opened for Kimi authentication.\n\nPlease complete the login in your browser.\n\nThe app will automatically detect your credentials."
         }
     }
-
-
+    
     private func startQwenAuth(email: String) {
         authenticatingService = .qwen
         NSLog("[SettingsView] Starting Qwen authentication")
