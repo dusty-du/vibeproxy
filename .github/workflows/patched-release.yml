@@ -25,15 +25,8 @@ env:
 
 jobs:
   build-cliproxy:
-    name: Build CLIProxyAPIPlus with Kimi (${{ matrix.arch }})
+    name: Build CLIProxyAPIPlus with Kimi
     runs-on: macos-14
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            goarch: arm64
-          - arch: x86_64
-            goarch: amd64
 
     outputs:
       cliproxy_version: ${{ steps.version.outputs.version }}
@@ -88,33 +81,26 @@ jobs:
           cd cliproxy-src
 
           export GOOS=darwin
-          export GOARCH=${{ matrix.goarch }}
+          export GOARCH=arm64
           export CGO_ENABLED=0
 
-          echo "Building for darwin/${{ matrix.goarch }}..."
+          echo "Building for darwin/arm64..."
 
-          go build -ldflags="-s -w" -o cli-proxy-api-plus-${{ matrix.arch }} ./cmd/server
+          go build -ldflags="-s -w" -o cli-proxy-api-plus ./cmd/server
 
-          file cli-proxy-api-plus-${{ matrix.arch }}
+          file cli-proxy-api-plus
 
       - name: Upload CLIProxyAPIPlus binary
         uses: actions/upload-artifact@v4
         with:
-          name: cliproxy-${{ matrix.arch }}
-          path: cliproxy-src/cli-proxy-api-plus-${{ matrix.arch }}
+          name: cliproxy-arm64
+          path: cliproxy-src/cli-proxy-api-plus
           retention-days: 1
 
   build-app:
-    name: Build VibeProxy App (${{ matrix.arch }})
+    name: Build VibeProxy App
     needs: build-cliproxy
     runs-on: macos-14
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            swift_arch: arm64
-          - arch: x86_64
-            swift_arch: x86_64
 
     steps:
       - name: Checkout code
@@ -130,12 +116,11 @@ jobs:
       - name: Download CLIProxyAPIPlus binary
         uses: actions/download-artifact@v4
         with:
-          name: cliproxy-${{ matrix.arch }}
+          name: cliproxy-arm64
           path: src/Sources/Resources/
 
       - name: Prepare CLIProxyAPIPlus binary
         run: |
-          mv src/Sources/Resources/cli-proxy-api-plus-${{ matrix.arch }} src/Sources/Resources/cli-proxy-api-plus
           chmod +x src/Sources/Resources/cli-proxy-api-plus
           file src/Sources/Resources/cli-proxy-api-plus
 
@@ -146,12 +131,12 @@ jobs:
           BUILD_NUMBER=$(git rev-list --count HEAD)
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
-          echo "Building version: ${VERSION} (build ${BUILD_NUMBER}) for ${{ matrix.arch }}"
+          echo "Building version: ${VERSION} (build ${BUILD_NUMBER}) for arm64"
 
       - name: Build app bundle (ad-hoc signed)
         env:
           APP_VERSION: ${{ steps.get_version.outputs.VERSION }}
-          TARGET_ARCH: ${{ matrix.swift_arch }}
+          TARGET_ARCH: arm64
         run: |
           chmod +x create-app-bundle.sh
 
@@ -169,14 +154,13 @@ jobs:
 
       - name: Create ZIP archive
         run: |
-          ditto -c -k --sequesterRsrc --keepParent "VibeProxy.app" "VibeProxy-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "VibeProxy.app" "VibeProxy-arm64.zip"
 
       - name: Calculate checksums
         run: |
-          shasum -a 256 VibeProxy-${{ matrix.arch }}.zip > VibeProxy-${{ matrix.arch }}.zip.sha256
+          shasum -a 256 VibeProxy-arm64.zip > VibeProxy-arm64.zip.sha256
 
-      - name: Sign update for Sparkle (arm64 only)
-        if: matrix.arch == 'arm64'
+      - name: Sign update for Sparkle
         id: sparkle_sign
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
@@ -184,7 +168,7 @@ jobs:
           if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
             echo "Warning: SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
             echo "ed_signature=" >> $GITHUB_OUTPUT
-            echo "length=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)" >> $GITHUB_OUTPUT
+            echo "length=$(stat -f%z VibeProxy-arm64.zip)" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -194,15 +178,15 @@ jobs:
             echo "Error: sign_update not found"
             find src/.build -name "sign_update" -type f || true
             echo "ed_signature=" >> $GITHUB_OUTPUT
-            echo "length=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)" >> $GITHUB_OUTPUT
+            echo "length=$(stat -f%z VibeProxy-arm64.zip)" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           echo "Using sign_update: $SIGN_UPDATE"
-          SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" VibeProxy-${{ matrix.arch }}.zip --ed-key-file -)
+          SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" VibeProxy-arm64.zip --ed-key-file -)
 
           ED_SIGNATURE=$(echo "$SIGNATURE" | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"$//')
-          LENGTH=$(stat -f%z VibeProxy-${{ matrix.arch }}.zip)
+          LENGTH=$(stat -f%z VibeProxy-arm64.zip)
 
           echo "ed_signature=$ED_SIGNATURE" >> $GITHUB_OUTPUT
           echo "length=$LENGTH" >> $GITHUB_OUTPUT
@@ -211,20 +195,18 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: vibeproxy-${{ matrix.arch }}
+          name: vibeproxy-arm64
           path: |
-            VibeProxy-${{ matrix.arch }}.zip
-            VibeProxy-${{ matrix.arch }}.zip.sha256
+            VibeProxy-arm64.zip
+            VibeProxy-arm64.zip.sha256
           retention-days: 1
 
-      - name: Save Sparkle signature (arm64 only)
-        if: matrix.arch == 'arm64'
+      - name: Save Sparkle signature
         run: |
           echo "${{ steps.sparkle_sign.outputs.ed_signature }}" > sparkle_signature.txt
           echo "${{ steps.sparkle_sign.outputs.length }}" > sparkle_length.txt
 
-      - name: Upload Sparkle signature (arm64 only)
-        if: matrix.arch == 'arm64'
+      - name: Upload Sparkle signature
         uses: actions/upload-artifact@v4
         with:
           name: sparkle-signature
@@ -254,7 +236,6 @@ jobs:
         run: |
           mkdir -p release
           cp artifacts/vibeproxy-arm64/* release/ || true
-          cp artifacts/vibeproxy-x86_64/* release/ || true
           ls -la release/
 
       - name: Download Sparkle signature
@@ -315,8 +296,6 @@ jobs:
           files: |
             release/VibeProxy-arm64.zip
             release/VibeProxy-arm64.zip.sha256
-            release/VibeProxy-x86_64.zip
-            release/VibeProxy-x86_64.zip.sha256
           draft: false
           prerelease: false
           generate_release_notes: false
@@ -329,12 +308,9 @@ jobs:
             - **Kimi Support**: Added Kimi (Moonshot AI) provider integration
             - **Custom Sparkle Feed**: Auto-updates point to this fork
 
-            ### Downloads
+            ### Download
 
-            | Architecture | ZIP |
-            |--------------|-----|
-            | **Apple Silicon** (M1/M2/M3) | `VibeProxy-arm64.zip` |
-            | **Intel** (x86_64) | `VibeProxy-x86_64.zip` |
+            - **Apple Silicon** (M1/M2/M3/M4): `VibeProxy-arm64.zip`
 
             ### Installation
 
