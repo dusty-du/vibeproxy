@@ -6,6 +6,17 @@
     <description>Patched VibeProxy with Kimi support - updates from dusty-du fork</description>
     <language>en</language>
     <item>
+      <title>Version 1.8.71</title>
+      <sparkle:version>469</sparkle:version>
+      <sparkle:shortVersionString>1.8.71</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 31 Jan 2026 22:37:56 +0000</pubDate>
+      <enclosure url="https://github.com/dusty-du/vibeproxy/releases/download/v1.8.71/VibeProxy-arm64.zip"
+                 type="application/octet-stream"
+                 sparkle:edSignature="n/JVjIOdNlvXDjMnYCO1a5mOBzVmIDXCjPgrOJ5pGZiyWJcxQs/9ZLcJSIwepd+kIPNkPCEshDHGTk4WhItfAA=="
+                 length="18409490"/>
+    </item>
+    <item>
       <title>Version 1.8.70.07</title>
       <sparkle:version>466</sparkle:version>
       <sparkle:shortVersionString>1.8.70.07</sparkle:shortVersionString>
