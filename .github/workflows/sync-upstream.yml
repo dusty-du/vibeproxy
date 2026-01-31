@@ -142,7 +142,7 @@ jobs:
           # Apply patches
           echo "Applying patches..."
           chmod +x update.sh
-          ./update.sh --apply
+          UPSTREAM_REF_OVERRIDE="$UPSTREAM_TAG_REF" ./update.sh --apply
 
           # Commit patched changes
           git add -A

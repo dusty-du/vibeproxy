@@ -240,12 +240,19 @@ apply_patches() {
         exit 1
     fi
 
-    # Determine the upstream reference to reset to
-    # In CI, we have an 'upstream' remote; locally we use 'origin/main'
-    if git remote | grep -q '^upstream$'; then
+    # Determine the upstream reference to reset to.
+    # Prefer an explicit override (e.g., a release tag) when provided.
+    if [ -n "${UPSTREAM_REF_OVERRIDE:-}" ]; then
+        UPSTREAM_REF="$UPSTREAM_REF_OVERRIDE"
+    elif git remote | grep -q '^upstream$'; then
         UPSTREAM_REF="upstream/main"
     else
         UPSTREAM_REF="origin/main"
+    fi
+
+    if ! git rev-parse -q --verify "${UPSTREAM_REF}^{commit}" >/dev/null; then
+        echo -e "${YELLOW}Warning: upstream ref '$UPSTREAM_REF' not found, falling back to HEAD.${NC}"
+        UPSTREAM_REF="HEAD"
     fi
 
     # Reset managed files to upstream state
