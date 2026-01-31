@@ -51,13 +51,33 @@ jobs:
           OUR_VERSION=${OUR_TAG#v}
           echo "Our latest: $OUR_TAG (version $OUR_VERSION)"
 
-          # Check if we need to sync
-          if [ "$UPSTREAM_TAG" = "$OUR_TAG" ]; then
+          semver_gt() {
+            local a="$1"
+            local b="$2"
+            if [ -z "$a" ] || [ -z "$b" ]; then
+              return 1
+            fi
+            if [ "$a" = "$b" ]; then
+              return 1
+            fi
+            local top
+            top=$(printf '%s\n' "$a" "$b" | sort -V | tail -n1)
+            [ "$top" = "$a" ]
+          }
+
+          # Check if we need to sync (upstream version must be higher)
+          if [ -z "$OUR_TAG" ]; then
+            echo "No existing release tag found; treating upstream as new"
+            echo "new_release=true" >> $GITHUB_OUTPUT
+          elif [ "$UPSTREAM_TAG" = "$OUR_TAG" ]; then
             echo "Already synced with upstream $UPSTREAM_TAG"
             echo "new_release=false" >> $GITHUB_OUTPUT
-          else
+          elif semver_gt "$UPSTREAM_VERSION" "$OUR_VERSION"; then
             echo "New upstream release detected: $UPSTREAM_TAG"
             echo "new_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Upstream $UPSTREAM_TAG is not newer than our $OUR_TAG"
+            echo "new_release=false" >> $GITHUB_OUTPUT
           fi
 
           echo "upstream_version=$UPSTREAM_VERSION" >> $GITHUB_OUTPUT
@@ -86,7 +106,8 @@ jobs:
       - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/automazeio/vibeproxy.git || true
-          git fetch upstream --tags
+          # Fetch upstream tags into a namespaced ref to avoid clobbering fork tags.
+          git fetch upstream "refs/tags/*:refs/tags/upstream/*"
 
       - name: Sync with upstream
         id: sync
@@ -94,6 +115,7 @@ jobs:
           set -e
 
           UPSTREAM_TAG="${{ needs.check-upstream.outputs.upstream_tag }}"
+          UPSTREAM_TAG_REF="refs/tags/upstream/${UPSTREAM_TAG}"
           echo "Syncing to upstream tag: $UPSTREAM_TAG"
 
           # Create a new branch for the sync
@@ -101,8 +123,8 @@ jobs:
           git checkout -b "$SYNC_BRANCH" main
 
           # Merge upstream tag
-          echo "Merging upstream $UPSTREAM_TAG..."
-          if git merge "$UPSTREAM_TAG" -m "Merge upstream $UPSTREAM_TAG" --no-edit; then
+          echo "Merging upstream $UPSTREAM_TAG_REF..."
+          if git merge "$UPSTREAM_TAG_REF" -m "Merge upstream $UPSTREAM_TAG" --no-edit; then
             echo "Merge successful"
           else
             echo "Merge conflicts detected, resolving..."
